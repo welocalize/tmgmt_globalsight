@@ -1,0 +1,111 @@
+diff --git a/src/Plugin/tmgmt/Translator/TMGMTGlobalSightConnector.php b/src/Plugin/tmgmt/Translator/TMGMTGlobalSightConnector.php
+index 268a234..1d3572b 100755
+--- a/src/Plugin/tmgmt/Translator/TMGMTGlobalSightConnector.php
++++ b/src/Plugin/tmgmt/Translator/TMGMTGlobalSightConnector.php
+@@ -5,6 +5,7 @@
+ use Drupal\tmgmt\TranslatorInterface;
+ use nusoap_client;
+ use Symfony\Component\DependencyInjection\SimpleXMLElement;
++use Drupal\Component\Utility\Html;
+ 
+ /**
+  * GlobalSight connector.
+@@ -135,6 +136,7 @@ function generateJobTitle($job, $label) {
+ 	 */
+ 	function encodeXML($job) {
+ 		$strings = \Drupal::service ( 'tmgmt.data' )->filterTranslatable ( $job->getData () );
++    $this->processStrings($strings);
+ 		$xml = "<?xml version='1.0' encoding='UTF-8' ?>";
+ 		$xml .= "<fields id='" . $job->id () . "'>";
+ 		foreach ( $strings as $key => $string ) {
+@@ -146,8 +148,90 @@ function encodeXML($job) {
+ 			}
+ 		}
+ 		$xml .= "</fields>";
++    // Uncomment to debug xml output
++    // \Drupal::logger('globalsight_xml')->notice('<pre>' . print_r($xml,1) . '</pre>');
+ 		return $xml;
+ 	}
++  
++  /**
++   * Method to process string values
++   */
++  function processStrings(&$strings) {
++    foreach($strings as $id => $string) {
++      if(!empty($string['#format']) && $string['#format'] == 'rich_text') {
++        // Use line below to just render the content (i.e. conver drupal-entity tags to img tags)
++        //$strings[$id]['#text'] = check_markup($string['#text'], 'rich_text')->__toString();
++        
++        // Process drupal entities to add lang attributes as needed
++        $strings[$id]['#text'] = $this->processDrupalEntityAttributes($string['#text']);
++      }
++    }
++  }
++  
++  /**
++   * Method to process attributes for drupal entities
++   */
++  function processDrupalEntityAttributes(&$text) {
++
++    if (strpos($text, 'data-entity-type') !== FALSE && (strpos($text, 'data-entity-embed-display') !== FALSE || strpos($text, 'data-view-mode') !== FALSE)) {
++      $dom = Html::load($text);
++      $xpath = new \DOMXPath($dom);
++
++      foreach ($xpath->query('//drupal-entity[@data-entity-type and (@data-entity-uuid or @data-entity-id) and (@data-entity-embed-display or @data-view-mode)]') as $node) {
++        /** @var \DOMElement $node */
++        $entity_type = $node->getAttribute('data-entity-type');
++        $entity = NULL;
++        $entity_output = '';
++
++        if (($settings = $node->getAttribute('data-entity-embed-settings')) && !$node->hasAttribute('data-entity-embed-display-settings')) {
++          $node->setAttribute('data-entity-embed-display-settings', $settings);
++        }
++
++        try {
++          // Load the entity either by UUID (preferred) or ID.
++          $id = NULL;
++          $entity = NULL;
++          if ($id = $node->getAttribute('data-entity-uuid')) {
++            $entity = \Drupal::entityTypeManager()->getStorage($entity_type)->loadByProperties(['uuid' => $id]);
++            $entity = current($entity);
++          }
++          else {
++            $id = $node->getAttribute('data-entity-id');
++            $entity = \Drupal::entityTypeManager()->getStorage($entity_type)->load($id);
++          }
++
++          if ($entity) {
++            $fields = $entity->getFields();
++            foreach($fields as $field_name => $field_definition) {
++              $value = $entity->get($field_name)->getValue();
++              if(strpos($field_name, 'lang') !== FALSE && !empty($value[0]['value'])) {
++                $node->setAttribute('lang', $value[0]['value']);
++              }
++              
++              // No need to add alt attribute now as that will be localized separately
++              /*if($field_name == 'image') {
++                $node->setAttribute('alt', $value[0]['alt']);
++              }*/
++            }
++            
++            
++          }
++        }catch (\Exception $e) {
++          watchdog_exception('tmgmt_globalsight_drupal_entity_process', $e);
++        }
++
++      }
++      
++      //@TODO: probably there is a better way without the need to strip out the tags
++      $result = preg_replace('/^<!DOCTYPE.+?>/', '', 
++                  preg_replace('/<html.+?>/', '', 
++                    preg_replace('/<[\/]?head.+?>/', '', 
++                      str_replace( array('<html>', '</html>', '</head>', '<body>', '</body>'), array('', '', '', ''), $dom->saveHTML()))));
++      return $result;
++
++    }
++    return $text;
++  }
+ 	
+ 	function getFileProfileId($access_token) {
+ 		$params = array (

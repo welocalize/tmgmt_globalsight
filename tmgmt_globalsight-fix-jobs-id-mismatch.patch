@@ -1,0 +1,32 @@
+diff --git a/tmgmt_globalsight.module b/tmgmt_globalsight.module
+index 52e47c9..6028e3c 100755
+--- a/tmgmt_globalsight.module
++++ b/tmgmt_globalsight.module
+@@ -2,10 +2,11 @@
+ global $base_url;
+ define ( 'GLOBALSIGHT_WSDL_URL', ($base_url . '/' . drupal_get_path ( 'module', 'tmgmt_globalsight' ) . '/AmbassadorWebService.xml') );
+ 
++use Drupal\tmgmt\Entity\Job;
+ use Drupal\tmgmt\Entity\JobItem;
+ use Drupal\tmgmt_globalsight\Plugin\tmgmt\Translator\TMGMTGlobalSightConnector;
+ function tmgmt_job_load($tjid) {
+-	$jobs = JobItem::loadMultiple ( array (
++	$jobs = Job::loadMultiple ( array (
+ 			$tjid 
+ 	) );
+ 	return $jobs ? reset ( $jobs ) : FALSE;
+@@ -24,7 +25,6 @@ function tmgmt_globalsight_cron() {
+ 			continue;
+ 		}
+ 		
+-		$job = $job->getJob ();
+ 		tmgmt_globalsight_ping ( $job, $record );
+ 	}
+ }
+@@ -87,4 +87,4 @@ function _tmgmt_globalsight_archive_job($tjid) {
+     ->execute();
+ 
+   return $num_updated;
+-}
+\ No newline at end of file
++}
